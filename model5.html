@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three.js webgl - collada</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #000000;
+				margin: 0px;
+				overflow: hidden;
+			}
+
+
+			div {
+				margin-left: 400px;
+			}
+		</style>
+	</head>
+	<body>
+
+		<script src="js/build/three.min.js"></script>
+		<script src="js/build/leap.min.js"></script>
+		<script src="js/loaders/ColladaLoader.js"></script>
+
+		<script src="js/Detector.js"></script>
+		<script src="js/libs/stats.min.js"></script>
+
+		<script>
+			//map function to be used to map values from leap into proper degrees (0-360)
+			function map(value, inputMin, inputMax, outputMin, outputMax){
+				outVal = ((value - inputMin) / (inputMax - inputMin) * (outputMax - outputMin) + outputMin);
+				if(outVal >  outputMax){
+					outVal = outputMax;
+				}
+				if(outVal <  outputMin){
+					outVal = outputMin;
+				}
+				return outVal;
+			}
+
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+
+			var container, stats;
+
+			var views, camera, scene, renderer, objects;
+			var particleLight, pointLight;
+			var dae, skin;
+
+			var controller = new Leap.Controller({ enableGestures: true });
+
+			var loader = new THREE.ColladaLoader();
+			loader.options.convertUpAxis = true;
+			loader.load( 'models/calderan/calderan.dae', function ( collada ) {
+
+				dae = collada.scene;
+				skin = collada.skins[ 0 ];
+
+				dae.scale.x = dae.scale.y = dae.scale.z = 0.01;
+
+				dae.updateMatrix();
+
+				init();
+
+			} );
+
+			var views = [
+					{ 
+						left: 0,
+						bottom: 0,
+						width: 1,
+						height: 1,
+						background: new THREE.Color().setRGB( 0, 0, 0 ),
+						eye: [ 0, 0, -900 ],
+						up: [ 0, 1, 0 ],
+						fov: 30
+					},
+					{ 
+						left: 0,
+						bottom: 1,
+						width: 1,
+						height: 1,
+						background: new THREE.Color().setRGB( 0, 0, 0 ),
+						eye: [ 900, 0, 0 ],
+						up: [ 0, -1, 1 ],
+						fov: 30
+					},
+					{ 
+						left: 1,
+						bottom: 0,
+						width: 1,
+						height: 1,
+						background: new THREE.Color().setRGB( 0, 0, 0 ),
+						eye: [ -900, 0, 0 ],
+						up: [ 0, 1, 0 ],
+						fov: 30
+					},
+					{ 
+						left: 1,
+						bottom: 1,
+						width: 1,
+						height: 1,
+						background: new THREE.Color().setRGB( 0, 0, 0 ),
+						eye: [ 0, 0, 900 ],
+						up: [ 0, -1, 1 ],
+						fov: 30
+					}
+				];
+
+			function init() {
+
+				container = document.createElement( 'div' );
+				document.body.appendChild( container );
+
+
+
+				scene = new THREE.Scene();
+
+
+				// Add the COLLADA
+
+				scene.add( dae );
+
+
+				// directional lighting
+				var hemisphereLight = new THREE.HemisphereLight(0x222222);
+				hemisphereLight.position.set(0, 0, 100).normalize();
+				scene.add(hemisphereLight);
+
+				renderer = new THREE.WebGLRenderer();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+				renderer.setViewport( 0, 0 );
+				container.appendChild( renderer.domElement );
+
+
+				
+				
+				for (var ii =  0; ii < views.length; ++ii ) {
+
+					var view = views[ii];
+					camera = new THREE.PerspectiveCamera( view.fov, 1200 / 1200, 0.1, 1000 );
+					camera.position.x = view.eye[ 0 ];
+					camera.position.y = view.eye[ 1 ];
+					camera.position.z = view.eye[ 2 ];
+					camera.up.x = view.up[ 0 ];
+					camera.up.y = view.up[ 1 ];
+					camera.up.z = view.up[ 2 ];
+					view.camera = camera;
+				}
+		
+
+				leap();
+				
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			//
+			function render() {
+
+				for ( var ii = 0; ii < views.length; ++ii ) {
+
+					view = views[ii];
+					camera = view.camera;
+
+					var left   = Math.floor( 1200 * view.left );
+					var bottom = Math.floor( 1200 * view.bottom );
+					var width  = Math.floor( 1200 * view.width );
+					var height = Math.floor( 1200 * view.height );
+					renderer.setViewport( left, bottom, width, height );
+					renderer.setScissor( left, bottom, width, height );
+					renderer.enableScissorTest ( true );
+					renderer.setClearColor( view.background );
+
+					camera.updateProjectionMatrix();
+					camera.lookAt(scene.position);
+					renderer.render(scene, camera);
+				}
+
+			}
+
+			function leap() {
+								//initite variables
+				var firstValidFrame = null
+				var cameraRadius = 890
+				var rotateY = 90, rotateX = 0, curY = 0
+				var fov = camera.fov;
+				//request animation frame and connect to leap socket
+				controller.loop(function(frame) {
+					if (frame.valid) {
+
+						for (var ii =  0; ii < views.length; ++ii ) {
+
+							if (!firstValidFrame) firstValidFrame = frame
+							var t = firstValidFrame.translation(frame)
+
+							//limit y-axis between 0 and 180 degrees
+							curY = map(t[1], -300, 300, 0, 179)
+
+							//assign rotation coordinates
+							rotateX = t[0]
+							rotateY = -curY
+
+							zoom = Math.max(0, t[2] + 200);
+							zoomFactor = 1/(1 + (zoom / 100));
+
+
+							
+
+								var view = views[ii];
+
+								//adjust 3D spherical coordinates of the camera
+								dae.rotation.x = (rotateX /180)
+								dae.rotation.y = (rotateY /180)
+								dae.rotation.z = (t[2] /180)
+								view.camera.fov = fov * zoomFactor;
+						}
+					}
+
+					render();
+
+
+					for( var i =  0; i < frame.gestures.length; i++){
+
+						var gestureType = frame.gestures[0].type;
+
+						if (gestureType === "keyTap")
+						{
+							secondModel();
+						}
+
+					  }
+				});
+			}
+
+			function secondModel() {
+				window.location.replace('index.html');
+			}
+
+		</script>
+	</body>
+</html>
